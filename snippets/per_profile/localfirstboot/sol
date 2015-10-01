@@ -1,0 +1,24 @@
+## Create an init script to take care of the last bits of configuration
+#raw
+cat <<EOF > /etc/init.d/localfirstboot
+#!/bin/bash
+#
+# localfirstboot:         last minute config things
+#
+# chkconfig: 35 99 95
+#
+# description:            final install steps that can't be \
+#                         done by anaconda
+#
+
+/sbin/service puppet stop \
+&& puppet agent --onetime --verbose --no-daemonize --debug --trace > /root/ks-cc-localfirstboot.log 2>&1
+
+chkconfig localfirstboot off
+rm -f /etc/init.d/localfirstboot
+shutdown -r now
+
+EOF
+chmod 0755 /etc/init.d/localfirstboot
+chkconfig localfirstboot on
+#end raw

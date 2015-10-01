@@ -1,0 +1,31 @@
+# CoC post-install
+#raw
+PATH=/sbin:/bin:/usr/bin:/usr/sbin:/usr/local/bin; export PATH
+umask 022
+
+yum -y erase subscription-manager
+yum upgrade -y
+
+yum install -y ntp
+cat<<EOF > /etc/ntp.conf
+# skeleton conf until we get the real one
+server ntp1.foo.bar burst iburst
+server ntp2.foo.bar burst iburst
+server ntp3.foo.bar burst iburst
+driftfile /var/lib/ntp/drift
+restrict  default notrust nomodify
+restrict 127.0.0.1
+EOF
+
+chkconfig ntpdate on
+chkconfig ntpd on
+
+#
+# fix up hostname
+#
+# fixing hostname in /etc/sysconfig/network, if necessary
+# Not sure why sometimes HOSTNAME=foo and other times HOSTNAME=foo.bar.org
+# This will make sure that it is the fqdn.
+sed -i -e 's/^HOSTNAME=\([^.]*\).*/HOSTNAME=\1/' /etc/sysconfig/network
+#end raw
+

@@ -1,0 +1,2 @@
+plymouth-set-default-theme details --rebuild-initrd
+

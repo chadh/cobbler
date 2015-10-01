@@ -1,0 +1,8 @@
+@core --nodefaults
+-aic94xx-firmware
+-ivtv-firmware
+-iwl*-firmware
+-libertas*-firmware
+-NetworkManager*
+wget
+

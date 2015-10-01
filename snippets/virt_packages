@@ -1,0 +1,16 @@
+@dialup
+keyutils
+trousers
+bridge-utils
+fipscheck
+kernel-xen
+xen
+Virtualization-en-US
+gnome-applet-vm
+libvirt
+virt-manager
+virt-viewer
+libcmpiutil
+libvirt-cim
+perl-Sys-Virt
+

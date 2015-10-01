@@ -1,0 +1,128 @@
+## Create an init script to take care of the last bits of configuration
+#raw
+cat <<'LOCALEOF' > /etc/init.d/localfirstboot
+#!/bin/bash -l
+#
+# localfirstboot:         last minute config things
+#
+# chkconfig: 35 99 95
+#
+# description:            final install steps that can't be \
+#                         done by anaconda
+#
+(
+PUPPETDIR=/etc/puppet
+ENVDIR=${PUPPETDIR}/environments/bootstrap
+MODDIR=${ENVDIR}/modules
+HIERAVER="0.3.0"
+
+# install latest puppet
+gem install puppet
+
+# install hiera and json and puppet backends
+gem install hiera hiera-puppet hiera-json
+
+# patch hiera gem to work with ruby 1.9.3
+# FIXME
+cd `/usr/local/rvm/bin/rvm gemdir`
+patch -p0 <<EOF >> /root/ks-cc-localfirstboot.log 2>&1
+--- gems/hiera-0.3.0/lib/hiera/backend.rb	2012-01-16 14:52:10.898098573 -0600
++++ gems/hiera-0.3.0/lib/hiera/backend.rb	2012-01-16 15:39:36.631489645 -0600
+@@ -155,7 +155,7 @@
+                 answer = nil
+ 
+                 Config[:backends].each do |backend|
+-                    if constants.include?("#{backend.capitalize}_backend")
++                    if constants.include?("#{backend.capitalize}_backend") || constants.include?("#{backend.capitalize}_backend".to_sym)
+                         @backends[backend] ||= Backend.const_get("#{backend.capitalize}_backend").new
+                         answer = @backends[backend].lookup(key, scope, order_override, resolution_type)
+EOF
+ 
+mkdir -p ${PUPPETDIR}
+cat > ${PUPPETDIR}/hiera.yaml <<EOF
+---
+:backends:
+           - json
+           - puppet
+
+:logger: puppet
+
+:hierarchy:
+              - nodes/%{hostname}
+              - modules-%{ccbp_osfam}
+              - modules
+              - common
+
+:json:
+        :datadir: /etc/puppet/environments/%{environment}/hieradata
+
+:puppet:
+        :datasource: data
+
+EOF
+
+# create location for puppet modules
+if [ ! -d ${MODDIR} ]
+then
+  if ! mkdir -p ${MODDIR}
+  then
+    echo "Cannot create ${MODDIR}.  Stopping"
+    exit 1
+  fi
+fi
+
+# download base module set
+cd ${MODDIR}
+for i in mysql apache hiera ccbp apachepassenger puppet
+do
+   if [ ! -d $i ]
+   then 
+     git clone git://github.com/baz/$i.git $i
+   fi
+done
+
+# create manifest for new master
+cat > ${ENVDIR}/site.pp <<'EOF'
+node default {
+  class { mysql: }
+  class { mysql::server: }
+
+  class { apache::config: }
+  class { apache: }
+
+  class { apachepassenger:
+    rubybinpath => '/usr/local/rvm/bin',
+    passengerpath => '/usr/local/rvm/gems/ruby-1.9.3-p125/gems/passenger-3.0.11',
+    maxpoolsize => 120,
+    maxinstancesperapp => 60,
+    poolidletime => 120,
+    maxrequests => 1000,
+    statthrottlerate => 120,
+    useglobalqueue => 'on',
+  }
+
+  class { puppet: }
+  class { puppet::master:
+    server_name => 'puppettest.foo.bar',
+    rubylibdir => '/usr/local/rvm/rubies/ruby-1.9.3-p125/lib',
+    server_mode => 'rack',
+    rackserver => 'passenger',
+    vardir => '/var/lib/puppetmaster',
+    ssldir => '/var/lib/puppetmaster/ssl',
+  }
+}
+EOF
+
+# run masterless puppet
+puppet apply --verbose --debug --trace --environment bootstrap --vardir /var/lib/puppetmaster --ssldir /var/lib/puppetmaster/ssl --modulepath ${MODDIR} ${ENVDIR}/site.pp >> /root/ks-cc-localfirstboot.log 2>&1
+
+chkconfig localfirstboot off
+# rm -f /etc/init.d/localfirstboot
+# shutdown -r now
+
+) > /root/ks-cc-localfirstboot.log 2>&1
+LOCALEOF
+
+chmod 0755 /etc/init.d/localfirstboot
+chkconfig localfirstboot on
+#end raw

@@ -1,0 +1,11 @@
+@base
+@core
+ntp
+vim-enhanced
+redhat-lsb
+qemu-kvm-tools
+qemu-kvm
+libvirt-client
+libvirt
+python-virtinst
+

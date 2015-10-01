@@ -1,0 +1,68 @@
+#set $bootsize = $getVar('$bootsize', 500)
+##
+#set $pvsize = $getVar('$pvsize', None)
+#if $pvsize == None
+#set $pvsizeopt = "--size=50000 --grow"
+#else
+#set $pvsizeopt = "--size=" + str($pvsize)
+#end if
+#set $rootvolsize = $getVar('$rootvolsize',25000)
+#set $varvolsize = $getVar('$varvolsize',5000)
+#set $tmpvolsize = $getVar('$tmpvolsize',2000)
+#set $swapvolsize = $getVar('$swapvolsize', 2000)
+
+#set $rawdisks = $getVar('$disks', None)
+#if $rawdisks != None
+#set $disks = $rawdisks.split(',')
+#else
+#set $disks = []
+#end if
+#set $count = $len($disks)
+
+#if $count <= 1
+#if $count == 0
+#raw
+DISK=$(awk '{ if ($NF ~ /(^[hs]d[a-z]|^x?vd[a-z])$/) print $NF; }'  /proc/partitions | head -n 1)
+#end raw
+#else
+DISK=$disks[0]
+#end if
+
+cat <<EOF > /tmp/partinfo
+part /boot --fstype=ext3 --size=$bootsize --asprimary --ondisk=\$DISK
+part pv.01 --asprimary $pvsizeopt --ondisk=\$DISK
+#else if $count >= 2
+#if $count == 2
+#set $raidlevel = 1
+#else if $count <= 6
+#set $raidlevel = 5
+#else
+#set $raidlevel = 6
+#end if
+#set $i = 0
+cat <<EOF > /tmp/partinfo
+#set $bootraidparts = ""
+#set $sysraidparts = ""
+#for $disk in $disks
+part raid.${i}1 --size=$bootsize --asprimary --ondisk=$disk
+part raid.${i}2 $pvsizeopt --ondisk=$disk
+#set $bootraidparts += "raid." + str($i) + "1 "
+#set $sysraidparts += "raid." + str($i) + "2 "
+#set $i += 1
+#end for
+raid /boot --fstype=ext3 --level=1 --device=md0 $bootraidparts
+raid pv.01 --level=$raidlevel --device=md1 $sysraidparts
+#end if
+volgroup vg1 pv.01
+logvol / --vgname=vg1 --size=$rootvolsize --name=root --fstype=ext3
+#if $varvolsize > 0
+logvol /var --vgname=vg1 --size=$varvolsize --name=var --fstype=ext3
+#end if
+#if $tmpvolsize > 0
+logvol /tmp --vgname=vg1 --size=$tmpvolsize --name=tmp --fstype=ext3
+#end if
+#if $swapvolsize > 0
+logvol swap --vgname=vg1 --size=$swapvolsize --name=swap
+#end if
+EOF
+

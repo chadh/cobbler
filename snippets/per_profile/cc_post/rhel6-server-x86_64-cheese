@@ -1,0 +1,46 @@
+# CoC post-install
+#raw
+umask 022
+
+cat<<EOF > /etc/ntp.conf
+# skeleton conf until we get the real one
+server ntp1.foo.bar burst iburst
+server ntp2.foo.bar burst iburst
+server ntp3.foo.bar burst iburst
+driftfile /var/lib/ntp/drift
+restrict  default notrust nomodify
+restrict 127.0.0.1
+EOF
+
+[ -x /sbin/pidof ] && if /sbin/pidof ntpd > /dev/null 2>&1; then
+	[ -x /usr/bin/pkill ] && /usr/bin/pkill ntpd
+fi
+#/usr/sbin/ntpd -gqxd
+/usr/sbin/ntpdate ntp1.foo.bar ntp2.foo.bar ntp3.foo.bar
+date
+
+chkconfig ntpd on
+
+# I think this is commented out because VMs really don't like these commands
+#/sbin/hwclock --show
+if ! `/sbin/hwclock --systohc --utc`; then echo "hwclock failed with exit code $?"; fi
+
+#
+# fix up hostname
+#
+echo "fixing hostname in /etc/sysconfig/network, if necessary"
+sed -i -e 's/^HOSTNAME=\([^.]*\).*/HOSTNAME=\1/' /etc/sysconfig/network
+source /etc/sysconfig/network
+hostname $HOSTNAME
+IPADDR=`hostname --ip-address`
+HOSTLONG=`host $HOSTNAME | tail -n 1 | awk '{ print $1; }'`
+
+#
+# fixup /etc/hosts
+#
+echo "building /etc/hosts" 
+echo "127.0.0.1		localhost  localhost.localdomain" > /etc/hosts
+echo "$IPADDR		$HOSTLONG $HOSTNAME" >> /etc/hosts
+
+#end raw
+

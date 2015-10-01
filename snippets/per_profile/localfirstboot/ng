@@ -1,0 +1,165 @@
+#set $amipuppetmaster = $getVar('$amipuppetmaster','no')
+#if $amipuppetmaster == 'yes'
+#set $puppetdir = $getVar('$puppetdir','/etc/puppet')
+#else
+#set $puppetserver = $getVar('$puppetserver','puppet.foo.bar')
+#set $puppetenv = $getVar('$puppetenv','infrastructure')
+#end if
+
+####
+## Create an init script to take care of the last bits of configuration
+cat <<'LOCALEOF' > /etc/init.d/localfirstboot
+#!/bin/bash -l
+#
+# localfirstboot:         last minute config things
+#
+# chkconfig: 35 99 95
+#
+# description:            final install steps that can't be \
+#                         done by anaconda
+#
+set +x
+(
+# install latest puppet
+
+#if $amipuppetmaster != 'yes'
+## install slightly older version of puppet to ensure we don't get newer than master
+yum install -y puppet-3.7.2
+puppet agent --pluginsync --environment=$puppetenv --onetime --verbose --no-daemonize --debug --trace --server $puppetserver --tags 'yum::repos'
+yum install -y yum-plugin-priorities
+puppet agent --pluginsync --environment=$puppetenv --onetime --verbose --no-daemonize --debug --trace --server $puppetserver
+chkconfig localfirstboot off
+# rm -f /etc/init.d/localfirstboot
+#end if
+
+## This happens if $AMIPUPPETMASTER == 'yes'
+#if $amipuppetmaster == 'yes'
+
+yum install -y puppet rubygems
+yum groupinstall -y development
+wget -O /usr/lib/ruby/site_ruby/1.8/hiera/backend/siteyaml_backend.rb http://linux-install.foo.bar/siteyaml_backend.rb
+
+ENVDIR=$puppetdir/environments/bootstrap
+MODDIR=\${ENVDIR}/modules
+PUPPETDIR=$puppetdir
+
+#raw
+# Setup main puppet configuration directory
+mkdir -p ${PUPPETDIR}
+cat > ${PUPPETDIR}/hiera.yaml <<EOF
+---
+:backends:
+           - siteyaml
+           - yaml
+
+:logger: puppet
+
+:hierarchy:
+              - nodes/%{hostname}
+              - %{module_name}-%{ccbp_osfam}
+              - %{module_name}
+              - common
+              - %{ccbp_osfam}
+
+:yaml:
+        :datadir: /etc/puppet/environments/%{environment}/modules/%{module_name}/hieradata
+
+:siteyaml:
+        :datadir: /etc/puppet/environments/%{environment}/hieradata
+EOF
+
+# Create shared file module
+if ! mkdir -p $PUPPETDIR/environments/common/modules/ccfiles/files
+then
+  echo "Cannot create ${PUPPETDIR}/environments/common/modules/ccfiles/files"
+  exit 1
+fi
+
+# Set up bootstrap environment
+if ! mkdir -p ${ENVDIR}/hieradata/nodes
+then
+  echo "Cannot create ${ENVDIR}/hieradata/nodes"
+  exit 1
+fi
+cat > ${ENVDIR}/hieradata/nodes/`hostname`.yaml <<EOF
+---
+  apachepassenger::config::rubybinpath: '/usr/bin'
+  apachepassenger::config::passengerpath: '/usr/lib/ruby/gems/1.8/gems/passenger-3.0.18'
+  apachepassenger::config::maxpoolsize: 120
+  apachepassenger::config::maxinstancesperapp: 60
+  apachepassenger::config::poolidletime: 120
+  apachepassenger::config::maxrequests: 1000
+  apachepassenger::config::statthrottlerate: 120
+  apachepassenger::config::useglobalqueue: 'on'
+
+  puppet::master::config::server_name: 'puppet1.foo.bar'
+  puppet::master::config::rubylibdir: '/usr/lib/'
+  puppet::master::config::server_mode: 'rack'
+  puppet::master::config::rackserver: 'passenger'
+  puppet::master::config::vardir: '/var/lib/puppetmaster'
+  puppet::master::config::ssldir: '/var/lib/puppetmaster/ssl'
+  puppet::master::config::rundir: '/var/run/puppet'
+  puppet::master::config::manifest: '/etc/puppet/environments/\$environment/site.pp'
+  puppet::master::config::modulepath:
+    - '/etc/puppet/environments/\$environment/modules'
+    - '/etc/puppet/environments/common/modules'
+  puppet::master::config::dbuser: 'puppet'
+  puppet::master::config::dbadapter: 'mysql'
+  puppet::master::config::dbserver: 'localhost'
+  puppet::master::config::dbsocket: '/var/lib/mysql/mysql.sock'
+  puppet::master::config::storecfgs: true
+
+  mysql::server::config_hash:
+
+  sshkeys::bindir: '/usr/local/bin'
+  sshkeys::install::knownhosts_servedir: "/etc/puppet/environments/common/ccfiles/files"
+
+EOF
+
+# create location for puppet modules
+if [ ! -d ${MODDIR} ]
+then
+  if ! mkdir -p ${MODDIR}
+  then
+    echo "Cannot create ${MODDIR}.  Stopping"
+    exit 1
+  fi
+fi
+
+# download base module set
+cd ${MODDIR}
+for i in apache ccbp apachepassenger puppet openssh sshkeys
+do
+   if [ ! -d $i ]
+   then 
+     git clone git://github.com/baz/$i.git $i
+   fi
+done
+
+puppet module install --environment bootstrap --modulepath ${MODDIR} puppetlabs-mysql
+
+# create manifest for new master
+cat > ${ENVDIR}/site.pp <<'EOF'
+node default {
+  include mysql
+  include mysql::server
+  include apache
+  include apachepassenger
+  include puppet
+  include puppet::master
+  include sshkeys::install
+}
+EOF
+
+# run masterless puppet
+puppet apply --verbose --debug --trace --environment bootstrap --vardir /var/lib/puppetmaster --ssldir /var/lib/puppetmaster/ssl --modulepath ${MODDIR} ${ENVDIR}/site.pp >> /root/ks-cc-localfirstboot.log 2>&1
+#end raw
+#end if
+
+#raw
+) > /root/ks-cc-localfirstboot.log 2>&1
+LOCALEOF
+
+chmod 0755 /etc/init.d/localfirstboot
+chkconfig localfirstboot on
+#end raw

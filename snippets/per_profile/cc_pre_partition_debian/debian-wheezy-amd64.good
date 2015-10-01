@@ -1,0 +1,149 @@
+#set $swapvolsize = $getVar('$swapvolsize', 2000)
+#set $bootsize = $getVar('$bootsize', 200)
+#set $rootvolsize = $getVar('$rootvolsize',15000)
+#set $varvolsize = $getVar('$varvolsize',5000)
+#set $tmpvolsize = $getVar('$tmpvolsize',2000)
+#set $pvsize = $getVar('$pvsize', None)
+#if $pvsize == None
+#set $pvsize = "-1"
+#end if
+#set $uselvm = $getVar('$uselvm', 'true')
+#set $singlepartition = $getVar('$singlepartition', 'false')
+
+#set $rawdisks = $getVar('$disks', None)
+#if $rawdisks != None
+#set $disks = $rawdisks.split(',')
+#else
+#set $disks = []
+#end if
+#set $count = $len($disks)
+
+#if $count <= 1
+#if $uselvm == 'true'
+d-i partman-auto/method string lvm
+#else
+d-i partman-auto/method string regular
+#end if
+d-i partman/confirm boolean true
+d-i partman-partitioning/confirm_write_new_label boolean true
+d-i partman/confirm_write_new_label boolean true
+d-i partman-md/device_remove_md boolean true
+d-i partman-md/confirm_nochanges boolean true
+d-i partman-lvm/confirm boolean true
+d-i partman/choose_partition select finish
+d-i partman/confirm_nooverwrite boolean true
+d-i partman-lvm/confirm_nooverwrite boolean true
+d-i partman-lvm/device_remove_lvm boolean true
+d-i partman-lvm/device_remove_lvm_span boolean true
+#if $uselvm == 'true'
+d-i partman-auto-lvm/new_vg_name string vg0
+#if $pvsize == "-1"
+#set $pvminpartsize = $rootvolsize + $tmpvolsize + $varvolsize + $swapvolsize + 5000
+#set $pvpartsize = "1000000000"
+##d-i partman-auto-lvm/guided_size string max
+#else
+#set $pvminpartsize = $pvsize
+#set $pvpartsize = $pvsize
+##d-i partman-auto-lvm/guided_size string $pvsize
+#end if
+#end if
+d-i partman/alignment string cylinder
+d-i partman-partitioning/choose_label select msdos
+d-i partman-ext3/no_mount_point boolean false
+
+#if $count == 1
+d-i partman-auto/disk string /dev/$disks[0]
+#end if
+#if $count == 0
+d-i partman-auto/disk string /dev/sda
+#end if
+
+#if $uselvm == 'true'
+#set $lvmstr = '$lvmok{ } in_vg{ vg0 } '
+#else
+#set $lvmstr = '$primary{ } '
+#end if
+
+#set $volstr = ' ext4 method{ format } format{ } use_filesystem{ } filesystem{ ext4 } '
+#set $swapstr = ' linux-swap method{ swap } format{ } '
+
+#set $expertstring = "boot-root :: "
+#set $expertstring = $expertstring + str($bootsize) + " " + str($bootsize) + " " + str($bootsize) + ' ext3 $primary{ } $bootable{ } method{ format } format{ } use_filesystem{ } filesystem{ ext3 } mountpoint{ /boot } . '
+#if $uselvm == 'true'
+#set $expertstring = $expertstring + str($pvminpartsize) + " " + str($pvminpartsize) + " " + str($pvpartsize) + ' ext3 $defaultignore{ } $primary{ } method{ lvm } vg_name{ vg0 } . '
+#if pvsize != "-1"
+#set $expertstring = $expertstring + "1 " + str($pvminpartsize) + ' 1000000000 ext3 $defaultignore{ } $primary{ } method{ keep } filesystem{ ext3 } use_filesystem{ } mountpoint{ /extradisk } . '
+#end if
+#end if
+#if $singlepartition == 'true'
+#set $expertstring = $expertstring + str($swapvolsize) + " " + str($swapvolsize) + " " + str($swapvolsize) + ' linux-swap ' + $lvmstr  + 'method{ swap } format{ } . '
+#set $expertstring = $expertstring + str($rootvolsize) + " " + str($rootvolsize) + " " + str($rootvolsize) + ' ext4 method{ format } format{ } use_filesystem{ } filesystem{ ext4 } ' + $lvmstr + 'mountpoint{ / } . '
+#set $expertstring = $expertstring + '1 1 1000000000 ext3 method{ format } format { } filesystem{ ext3 } ' + $lvmstr + 'use_filesystem{ } mountpoint{ /scratch } . '
+#else
+#set $expertstring = $expertstring + "1000 4000 " + str($rootvolsize) + $volstr + $lvmstr + 'mountpoint{ / } . '
+#set $expertstring = $expertstring + "200 1000 " + str($tmpvolsize) + $volstr + $lvmstr + 'mountpoint{ /tmp } . '
+#set $expertstring = $expertstring + "500 1000 " + str($varvolsize) + $volstr + $lvmstr + 'mountpoint{ /var } . '
+#set $expertstring = $expertstring + "2048 4096 " + str($swapvolsize) + $swapstr + $lvmstr + ' . '
+#set $expertstring = $expertstring + '1 1 1000000000' + $volstr + $lvmstr + 'mountpoint{ /scratch } . '
+#end if
+d-i partman-auto/expert_recipe string $expertstring
+
+#else
+
+#if $count == 2
+#set $raidlevel = 1
+#else if $count <= 6
+#set $raidlevel = 5
+#else
+#set $raidlevel = 6
+#end if
+
+#set $allparts = ' /dev/'.join($disks)
+d-i partman-auto/disk string /dev/$allparts
+d-i partman-auto/method string raid
+d-i partman-md/confirm boolean true
+d-i partman-partitioning/confirm_write_new_label boolean true
+d-i partman/confirm_write_new_label boolean true
+d-i partman-md/device_remove_md boolean true
+d-i partman-md/confirm_nochanges boolean true
+d-i partman-lvm/confirm boolean true
+d-i partman/choose_partition select finish
+d-i partman/confirm_nooverwrite boolean true
+d-i partman-md/confirm_nooverwrite boolean true
+d-i partman/confirm boolean true
+d-i partman-lvm/device_remove_lvm boolean true
+d-i partman-lvm/device_remove_lvm_span boolean true
+d-i partman-auto-lvm/new_vg_name string vg0
+#if $pvsize == -1
+d-i partman-auto-lvm/guided_size string max
+#else
+d-i partman-auto-lvm/guided_size string $pvsize
+#end if
+d-i partman/alignment string cylinder
+d-i partman-partitioning/choose_label select msdos
+d-i mdadm/boot_degraded	boolean	true
+
+#set $newdisks = []
+#for $disk in $disks
+#$newdisks.append($disk + "1")
+#end for
+#set $allparts = '#/dev/'.join($newdisks)
+
+#set $newdisks2 = []
+#for $disk in $disks
+#$newdisks2.append($disk + "5")
+#end for
+#set $allparts2 = '#/dev/'.join($newdisks2)
+d-i partman-auto-raid/recipe string $raidlevel $count 0 ext4 /boot /dev/${allparts} . $raidlevel $count 0 lvm - /dev/${allparts2} . 
+
+#set $multiraidstring = "multiraid :: "
+#set $multiraidstring = $multiraidstring + "100 512 " + str($bootsize) + ' raid $lvmignore{ } $primary{ } method{ raid } . '
+#set $multiraidstring = $multiraidstring + "900 5000 " +  str($pvsize) + ' raid $lvmignore{ } method{ raid } . '
+#set $multiraidstring = $multiraidstring + "100 4000 " + str($rootvolsize) + ' ext4 $defaultignore{ } $lvmok{ } method{ format } format{ } use_filesystem{ } filesystem{ ext4 } mountpoint{ / } . '
+#set $multiraidstring = $multiraidstring + "100 5000 " + str($tmpvolsize) + ' ext4 $defaultignore{ } $lvmok{ } method{ format } format{ } use_filesystem{ } filesystem{ ext4 } mountpoint{ /tmp } . '
+#set $multiraidstring = $multiraidstring + "100 5000 " + str($varvolsize) + ' ext4 $defaultignore{ } $lvmok{ } method{ format } format{ } use_filesystem{ } filesystem{ ext4 } mountpoint{ /var } . '
+#set $multiraidstring = $multiraidstring + "64 512 " + str($swapvolsize) + ' linux-swap $defaultignore{ } $lvmok{ } method{ swap } format{ } . '
+#set $multiraidstring = $multiraidstring + '1 1 1000000000 ext4 $defaultignore{ } $lvmok{ } method{ format } format{ } filesystem{ ext4 } use_filesystem{ } mountpoint{ /scratch } .'
+d-i partman-auto/expert_recipe string $multiraidstring
+
+#end if

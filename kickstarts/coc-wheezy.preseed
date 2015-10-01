@@ -1,0 +1,67 @@
+#set $puppetenv = $getVar('$puppetenv', "infrastructure")
+#set $puppetserver = $getVar('$puppetserver', "parmigiano.foo.bar")
+#raw
+#### Contents of the preconfiguration file (for wheezy)
+### Localization - these are specified on kernel command line
+#d-i debian-installer/locale string en_US.UTF-8
+#d-i console-keymaps-at/keymap select American English
+#d-i debian-installer/keymap string us
+#d-i keymap select us
+
+### Network configuration
+d-i netcfg/choose_interface select auto
+# Any hostname and domain names assigned from dhcp take precedence over
+# values set here. However, setting the values still prevents the questions
+# from being shown, even if values come from dhcp.
+d-i netcfg/get_hostname string unassigned-hostname
+d-i netcfg/get_domain string unassigned-domain
+
+
+### Mirror settings
+d-i mirror/protocol string http
+d-i mirror/country string US
+d-i mirror/http/hostname string debian.foo.bar
+d-i mirror/http/directory string /debian
+d-i mirror/suite string wheezy
+d-i mirror/http/proxy string
+
+### Account setup
+d-i passwd/make-user boolean false
+
+### Clock and time zone setup
+d-i clock-setup/utc boolean true
+d-i time/zone string GMT
+d-i clock-setup/ntp boolean true
+
+d-i grub-installer/only_debian boolean true
+d-i grub-installer/with_other_os boolean true
+d-i grub-pc/install_devices multiselect /dev/sda
+
+### Package selection
+tasksel tasksel/first multiselect minimal
+d-i pkgsel/include string openssh-server \
+				puppet \
+				build-essential \
+				vim \
+				less \
+                                firmware-linux-free \
+				ntp
+d-i pkgsel/upgrade select none
+popularity-contest popularity-contest/participate boolean false
+
+### Misc options
+# Disable that annoying WEP key dialog.
+d-i netcfg/wireless_wep string
+# Allow non-free firmware
+d-i hw-detect/load_firmware boolean true
+# Avoid that last message about the install being complete.
+d-i finish-install/reboot_in_progress note
+
+#end raw
+
+### Partitioning
+
+$SNIPPET('cc_pre_partition_debian')
+
+d-i preseed/early_command string wget "http://cobbler.foo.bar/cblr/svc/op/trig/mode/pre/system/$name" -O /dev/null
+d-i preseed/late_command string wget -O /target/tmp/post.sh http://linux-install.foo.bar/bootstrap.sh && in-target /bin/bash -x /tmp/post.sh agent $puppetserver $puppetenv; wget "http://cobbler.foo.bar/cblr/svc/op/trig/mode/post/system/$name" -O /dev/null

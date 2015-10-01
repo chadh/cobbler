@@ -1,0 +1,82 @@
+# CoC post-install
+#set $puppetenv = $getVar('$puppetenv','production')
+PUPPETENV=$puppetenv
+#set $puppetserver = $getVar('$puppetserver','puppet')
+PUPPETSERVER=$puppetserver
+#raw
+install -o root -g root -m 0755 -d /usr/local/bin/
+wget -O /usr/local/bin/ccbp_sysinfo http://linux-install.foo.bar/scripts/ccbp_sysinfo
+chown root:root /usr/local/bin/ccbp_sysinfo
+chmod 755 /usr/local/bin/ccbp_sysinfo
+
+PATH=/sbin:/bin:/usr/bin:/usr/sbin:/usr/local/bin; export PATH
+umask 022
+
+cat<<EOF > /etc/ntp.conf
+# skeleton conf until we get the real one
+server ntp1.foo.bar burst iburst
+server ntp2.foo.bar burst iburst
+server ntp3.foo.bar burst iburst
+driftfile /var/lib/ntp/drift
+restrict  default notrust nomodify
+restrict 127.0.0.1
+EOF
+
+[ -x /sbin/pidof ] && if /sbin/pidof ntpd > /dev/null 2>&1; then
+	[ -x /usr/bin/pkill ] && /usr/bin/pkill ntpd
+fi
+#/usr/sbin/ntpd -gqxd
+/usr/sbin/ntpdate ntp1.foo.bar ntp2.foo.bar ntp3.foo.bar
+date
+
+chkconfig ntpd on
+
+# I think this is commented out because VMs really don't these commands
+#/sbin/hwclock --show
+if ! `/sbin/hwclock --systohc --utc`; then echo "hwclock failed with exit code $?"; fi
+
+#
+# fix up hostname
+#
+echo "fixing hostname in /etc/sysconfig/network, if necessary"
+sed -i -e 's/^HOSTNAME=\([^.]*\).*/HOSTNAME=\1/' /etc/sysconfig/network
+source /etc/sysconfig/network
+hostname $HOSTNAME
+IPADDR=`hostname --ip-address`
+HOSTLONG=`host $HOSTNAME | tail -n 1 | awk '{ print $1; }'`
+
+#
+# fixup /etc/hosts
+#
+echo "building /etc/hosts" 
+echo "127.0.0.1		localhost  localhost.localdomain" > /etc/hosts
+echo "$IPADDR		$HOSTLONG $HOSTNAME" >> /etc/hosts
+
+yum -y install puppet-2.7.19 facter-1.6.12 mcollective
+
+PM=`host $PUPPETSERVER | tail -n 1 | awk '{ print $1; }'`
+echo "PUPPET_SERVER=$PM" > /etc/sysconfig/puppet
+cat<<EOF > /etc/puppet/puppet.conf
+    [main]
+    vardir=/var/lib/puppet
+    ssldir=\$vardir/ssl
+    pluginsync = true
+    environment = $PUPPETENV
+EOF
+chkconfig puppet on
+
+#
+# bootstrap puppet
+# 
+
+# clean up any old certs locally or on the master
+#wget -O /dev/null http://cobbler.foo.bar/cgi-bin/cleanmycert.sh
+
+# this loops until the puppet cert is signed (or a bug is fixed :))
+while ! puppet agent --onetime --verbose --no-daemonize --debug --trace --server $PM # --tags bootstrap
+do
+  date
+  sleep 300
+done
+
+#end raw

@@ -1,0 +1,3 @@
+repo --name=VT --baseurl=http://cobbler.foo.bar/rhnmirror/rhel5-i386-server/VT
+#repo --name=Supplementary --baseurl=http://cobbler.foo.bar/rhnmirror/rhel5-i386-server/Supplementary
+

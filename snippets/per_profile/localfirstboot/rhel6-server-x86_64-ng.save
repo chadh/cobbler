@@ -1,0 +1,125 @@
+#set $amipuppetmaster = $getVar('$amipuppetmaster','no')
+AMIPUPPETMASTER=$amipuppetmaster
+#set $puppetenv = $getVar('$puppetenv','production')
+PUPPETENV=$puppetenv
+#if $iampuppetmaster
+#set $puppetdir = $getVar('$puppetdir','/etc/puppet')
+PUPPETDIR=$puppetdir
+#else
+#set $puppetserver = $getVar('$puppetserver','puppet')
+PUPPETSERVER=$puppetserver
+#end if
+
+####
+## Create an init script to take care of the last bits of configuration
+#raw
+cat <<'LOCALEOF' > /etc/init.d/localfirstboot
+#!/bin/bash -l
+#
+# localfirstboot:         last minute config things
+#
+# chkconfig: 35 99 95
+#
+# description:            final install steps that can't be \
+#                         done by anaconda
+#
+(
+ENVDIR=${PUPPETDIR}/environments/bootstrap
+MODDIR=${ENVDIR}/modules
+
+# install latest puppet
+yum install -y puppet
+
+mkdir -p ${PUPPETDIR}
+cat > ${PUPPETDIR}/hiera.yaml <<EOF
+---
+:backends:
+           - yaml
+
+:logger: puppet
+
+:hierarchy:
+              - nodes/%{hostname}
+              - modules-%{ccbp_osfam}
+              - modules
+              - common
+
+:yaml:
+        :datadir: /etc/puppet/environments/%{environment}/hieradata
+
+EOF
+
+if ! mkdir -p ${ENVDIR}/hieradata/nodes
+then
+  echo "Cannot create ${ENVDIR/hieradata/nodes}
+  exit 1
+fi
+cat > ${ENVDIR}/hieradata/nodes/`hostname`.yaml <<EOF
+---
+  apachepassenger::rubybinpath: '/usr/bin'
+  apachepassenger::passengerpath: '/usr/lib/ruby/gems/1.8/gems/passenger-3.0.12'
+  apachepassenger::maxpoolsize: 120
+  apachepassenger::maxinstancesperapp: 60
+  apachepassenger::poolidletime: 120
+  apachepassenger::maxrequests: 1000
+  apachepassenger::statthrottlerate: 120
+  apachepassenger::useglobalqueue: 'on'
+
+  puppet::master::server_name: 'puppet1.foo.bar'
+  puppet::master::rubylibdir: '/usr/lib/'
+  puppet::master::server_mode: 'rack'
+  puppet::master::rackserver: 'passenger'
+  puppet::master::vardir: '/var/lib/puppetmaster'
+  puppet::master::ssldir: '/var/lib/puppetmaster/ssl'
+  puppet::master::manifest: '$confdir/environments/$environment/site.pp'
+
+EOF
+
+# create location for puppet modules
+if [ ! -d ${MODDIR} ]
+then
+  if ! mkdir -p ${MODDIR}
+  then
+    echo "Cannot create ${MODDIR}.  Stopping"
+    exit 1
+  fi
+fi
+
+# download base module set
+cd ${MODDIR}
+for i in mysql apache hiera ccbp apachepassenger puppet
+do
+   if [ ! -d $i ]
+   then 
+     git clone git://github.com/baz/$i.git $i
+   fi
+done
+
+# create manifest for new master
+cat > ${ENVDIR}/site.pp <<'EOF'
+node default {
+  include mysql
+  include mysql::server
+
+  include apache::config
+  include apache
+
+  include apachepassenger
+  include puppet
+  include puppet::master
+}
+EOF
+
+# run masterless puppet
+puppet apply --verbose --debug --trace --environment bootstrap --vardir /var/lib/puppetmaster --ssldir /var/lib/puppetmaster/ssl --modulepath ${MODDIR} ${ENVDIR}/site.pp >> /root/ks-cc-localfirstboot.log 2>&1
+
+chkconfig localfirstboot off
+# rm -f /etc/init.d/localfirstboot
+# shutdown -r now
+
+) > /root/ks-cc-localfirstboot.log 2>&1
+LOCALEOF
+
+chmod 0755 /etc/init.d/localfirstboot
+chkconfig localfirstboot on
+#end raw

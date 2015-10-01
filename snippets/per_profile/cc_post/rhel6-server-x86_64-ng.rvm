@@ -1,0 +1,45 @@
+# CoC post-install
+#set $amipuppetmaster = $getVar('$amipuppetmaster','no')
+AMIPUPPETMASTER=$amipuppetmaster
+#set $puppetenv = $getVar('$puppetenv','production')
+PUPPETENV=$puppetenv
+#set $puppetdir = $getVar('$puppetdir','/etc/puppet')
+PUPPETDIR=$puppetdir
+#raw
+
+#
+# fix up hostname
+#
+# fixing hostname in /etc/sysconfig/network, if necessary
+sed -i -e 's/^HOSTNAME=\([^.]*\).*/HOSTNAME=\1/' /etc/sysconfig/network
+source /etc/sysconfig/network
+hostname $HOSTNAME
+IPADDR=`hostname --ip-address`
+HOSTLONG=`host $HOSTNAME | tail -n 1 | awk '{ print $1; }'`
+
+#
+# Now install RVM and ruby
+#
+ENVDIR=${PUPPETDIR}/environments/bootstrap
+MODDIR=${ENVDIR}/modules
+RUBYVER="1.9.3"
+
+# Install RVM
+wget -O /tmp/rvm-installer https://raw.github.com/wayneeseguin/rvm/master/binscripts/rvm-installer
+bash /tmp/rvm-installer
+#if [ $? -ne 0 ]
+#then
+#  echo "RVM Install Failed" 1>&2
+#  exit 1
+#fi
+#
+# Install some packages needed to install ruby
+yum install -e 0 -d 0 -y gcc-c++ patch readline readline-devel zlib zlib-devel libyaml-devel libffi-devel openssl-devel make bzip2 autoconf automake libtool bison
+
+# Reload shell environment
+. /etc/profile.d/rvm.sh
+
+# install ruby (have to specify version)
+rvm install ${RUBYVER} --default
+
+#end raw

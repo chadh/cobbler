@@ -1,0 +1,9 @@
+@base
+@core
+@x11
+ntp
+vim-enhanced
+redhat-lsb
+rpcbind
+nfs-utils
+git

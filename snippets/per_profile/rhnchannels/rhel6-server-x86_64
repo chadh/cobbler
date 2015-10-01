@@ -1,0 +1,6 @@
+#repo --name=rhel6-server --baseurl=http://rhnmirror.foo.bar/rhel6.5-x86_64-server/Server
+#repo --name=rhel6-server-optional --baseurl=http://rhnmirror.foo.bar/rhel6.5-x86_64-server/Optional
+#repo --name=epel-6 --baseurl=http://cobbler.foo.bar/cobbler/repo_mirror/epel-6-x86_64
+#repo --name=puppetlabs-products --baseurl=http://cobbler.foo.bar/cobbler/repo_mirror/rhel6-x86_64-puppetlabs-products
+#repo --name=puppetlabs-dependencies --baseurl=http://cobbler.foo.bar/cobbler/repo_mirror/rhel6-x86_64-puppetlabs-dependencies
+

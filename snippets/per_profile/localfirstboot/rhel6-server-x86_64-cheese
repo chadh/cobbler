@@ -1,0 +1,43 @@
+#set $puppetenv = $getVar('$puppetenv','production')
+#set $master = $getVar('$master', None)
+
+## Create an init script to take care of the last bits of configuration
+#raw
+cat <<'LOCALEOF' > /etc/init.d/localfirstboot
+#!/bin/bash -l
+#
+# localfirstboot:         last minute config things
+#
+# chkconfig: 35 99 95
+#
+# description:            final install steps that can't be \
+#                         done by anaconda
+#
+(
+#end raw
+PUPPETENV=$puppetenv
+#if $master == None
+#raw
+PM=`host puppet | tail -n 1 | awk '{ print $1; }'`
+#end raw
+#else
+PM="$master"
+#end if
+
+#raw
+
+yum -y install puppet-2.7.14 facter-1.6.8
+
+# run masterless puppet
+puppet agent --verbose --debug --trace --test --server $PM --environment $PUPPETENV >> /root/ks-cc-localfirstboot.log 2>&1
+
+chkconfig localfirstboot off
+# rm -f /etc/init.d/localfirstboot
+# shutdown -r now
+
+) > /root/ks-cc-localfirstboot.log 2>&1
+LOCALEOF
+
+chmod 0755 /etc/init.d/localfirstboot
+chkconfig localfirstboot on
+#end raw

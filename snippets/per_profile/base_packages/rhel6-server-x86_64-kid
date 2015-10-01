@@ -1,0 +1,9 @@
+@base
+@core
+@development
+ntp
+vim-enhanced
+redhat-lsb
+rpcbind
+nfs-utils
+-subscription-manager
